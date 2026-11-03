@@ -1,0 +1,25 @@
+[project]
+name = "bubblelat"
+version = "0.0.0"
+description = "Evaluation of latent representation over BubbleML"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "h5py>=3.16.0",
+    "jupyter>=1.1.1",
+    "lightning>=2.6.6",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+    "timm>=1.0.30",
+    "torch>=2.15.0",
+    "torchvision>=0.29.2",
+    "wandb>=0.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "ruff>=0.17.3",
+    "ty>=0.0.96",
+]
