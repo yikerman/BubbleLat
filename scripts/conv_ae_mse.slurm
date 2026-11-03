@@ -6,7 +6,7 @@
 #SBATCH --account=caoy44
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --tmp=20G
+#SBATCH --tmp=100G
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --requeue

@@ -26,9 +26,20 @@ uv sync --frozen
 
 bubblelat() { uv run --frozen --no-sync bubblelat "$@"; }
 
+# Copy the 128x128 cache into node-local scratch once per job and train from there.
+CACHE=/pub/caoy44/bubblelat_cache_128
+stage_cache() {
+    [[ -n "${SLURM_JOB_ID:-}" && -z "${STAGED:-}" ]] || return 0
+    echo "staging $CACHE -> $TMPDIR/cache"
+    time cp -r "$CACHE" "$TMPDIR/cache"
+    CONFIGS+=(--data.data_dirs "[$TMPDIR/cache]")
+    STAGED=1
+}
+
 # evaluate MODEL_CONFIG [overrides...]: test a model without training (one wandb run).
 evaluate() {
     local model="$1"; shift
+    stage_cache
     bubblelat test "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" "$@"
 }
 
@@ -37,6 +48,7 @@ evaluate() {
 # requeued job resumes the same wandb run and continues training from last.ckpt.
 fit_test() {
     local run="$1" model="$2"; shift 2
+    stage_cache
     local id="$EXP-$JOB-$run"
     local ckpt="outputs/bubblelat/$id/checkpoints/last.ckpt"
     local ids=(--trainer.logger.init_args.id "$id" --trainer.logger.init_args.resume allow)

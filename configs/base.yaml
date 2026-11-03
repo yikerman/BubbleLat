@@ -5,7 +5,7 @@ trainer:
   max_epochs: 50
   accelerator: auto
   devices: 1
-  precision: bf16-mixed
+  precision: 32
   log_every_n_steps: 20
   callbacks:
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
@@ -17,10 +17,10 @@ trainer:
       project: bubblelat
       save_dir: outputs
 data:
-  data_dirs: [../BubbleGen/samples]   # BubbleML 2 on HPC3: one directory per fluid
+  data_dirs: [data/samples]           # cache root; build: python -m bubblelat.cache hdf5 ../BubbleGen/samples --out data/samples
+                                      # on HPC3, scripts/common.sh points this at the staged 128x128 cache
   holdout_every: 5                    # per directory, by wall temp: i%5==1 val, i%5==3 test
   fields: [dfun, temperature, velx, vely]
   burn_in: 0                          # 100 for full BubbleML runs
-  downsample: 1
   batch_size: 16
   num_workers: 4

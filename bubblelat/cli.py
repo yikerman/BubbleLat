@@ -45,8 +45,6 @@ class CLI(LightningCLI):
             return
         if logger.init_args.get("name") is None:
             parts = [_short(cfg.model.model), _short(cfg.model.loss)]
-            if cfg.data.downsample > 1:
-                parts.append(f"data_ds{cfg.data.downsample}")
             logger.init_args.name = "-".join(p for p in parts if p)
         logger.init_args.job_type = self.subcommand
 

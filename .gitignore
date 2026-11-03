@@ -14,3 +14,4 @@ outputs/
 wandb/
 logs/*
 !logs/.gitkeep
+data/

@@ -6,7 +6,8 @@ Learned compression of BubbleML single frames, and how meaningful the resulting 
 
 | file | role |
 | --- | --- |
-| `bubblelat/data.py` | reads `.hdf5` + `.json` runs, fixed split by wall temperature, standardizes each field |
+| `bubblelat/cache.py` | builds the cache: one `(T, C, H, W)` float32 `.npy` + `.json` per run, from WDS shards or HDF5 |
+| `bubblelat/data.py` | reads the cache (memory-mapped), fixed split by wall temperature, standardizes each field |
 | `bubblelat/models.py` | `Autoencoder` interface (`encode`, `decode`), `Downsample` baseline, `ConvAE` |
 | `bubblelat/losses.py` | `MSE` (a loss returns a dict whose `"loss"` entry is optimized) |
 | `bubblelat/metrics.py` | MAE, RMSE, VRMSE per field, in physical units |
@@ -26,7 +27,12 @@ uv run bubblelat test --config outputs/wandb/<run>/files/config.yaml \
     --ckpt_path outputs/bubblelat/<id>/checkpoints/<ckpt> --trainer.logger.init_args.name null
 ```
 
-Override any argument from the command line, e.g. `--model.model.factor 8` or `--data.downsample 4`.
+Override any argument from the command line, e.g. `--model.model.factor 8`.
+
+Training reads a cache of per-run float32 arrays (`bubblelat/cache.py`). Locally, build it from the
+sample files once: `uv run python -m bubblelat.cache hdf5 ../BubbleGen/samples --out data/samples`.
+On HPC3, `scripts/build_cache.slurm` builds the 128×128 cache from the BubbleML_2 WebDataset, and
+each job copies it into `$TMPDIR`.
 Use `WANDB_MODE=offline` for quick local runs.
 
 wandb runs are named after the model, its arguments and the loss (for example

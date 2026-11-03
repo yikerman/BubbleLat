@@ -15,8 +15,8 @@ representation score, and the Spearman rank correlation between the two.
 
 ### 1. Check-in (Nov 12): baselines and harness
 - [x] Framework: data, models, losses, metrics, Lightning CLI, wandb, Slurm scripts
-- [ ] Test drive on HPC3 (`scripts/conv_ae_smoke.slurm`)
-- [ ] Data I/O: a downsampled local copy (on `/pub` or node `$TMPDIR`) instead of random reads from CRSP
+- [x] Test drive on HPC3 (`scripts/conv_ae_smoke.slurm`), reading HDF5 directly: works, but I/O-bound
+- [ ] Build the 128×128 float32 cache from the WebDataset shards (`scripts/build_cache.slurm`); rerun the test drive on it
 - [ ] Baselines at 2–3 compression ratios: Downsample, POD, ConvAE, the earlier VAE
 - [ ] Reconstruction metrics: VRMSE per field; spectral error by wavenumber band; vapor IoU and fraction
 - [ ] Latent dump (`predict`) for every model, plus ridge probes with POD and random-encoder controls

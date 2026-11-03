@@ -1,26 +1,25 @@
 """BubbleML data. One sample is one frame (C, H, W) of one simulation run.
 
-Each run is a `<name>.hdf5` file holding one (T, H, W) dataset per field, plus a
-`<name>.json` with its metadata. A run's id is "<parent dir>/<name>", for example
-"PoolBoiling-Subcooled-FC72-2D/Twall-100". Splits are made by run, never by frame,
+Reads the cache written by `bubblelat.cache`: each run is a `<group>/<stem>.npy` array of
+shape (T, C, H, W), float32 and already at training resolution, plus a `<stem>.json` holding
+its metadata, field names and simulation frame indices "t". A run's id is "<group>/<stem>",
+e.g. "PoolBoiling-Subcooled-FC72-2D/Twall_100". Splits are made by run, never by frame,
 because neighboring frames are nearly identical.
 """
 
 import json
 from pathlib import Path
 
-import h5py
 import lightning as L
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 FIELDS = ["dfun", "temperature", "velx", "vely"]
 
 
 class Run:
-    """One simulation file and its metadata."""
+    """One cached simulation run and its metadata."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -28,14 +27,15 @@ class Run:
         self.meta = json.loads(path.with_suffix(".json").read_text())
         self.fluid = self.meta.get("liquid", "unknown")
         self.wall_temp = float(self.meta["heater"]["wallTemp"])
-        with h5py.File(path, "r") as f:
-            self.n_frames = f["dfun"].shape[0]
+        self.fields: list[str] = self.meta["fields"]
+        self.t: list[int] = self.meta["t"]  # simulation frame index of each stored frame
 
 
-def find_runs(data_dirs: list[str]) -> list[Run]:
-    paths = sorted(p for d in data_dirs for p in Path(d).expanduser().glob("*.hdf5"))
+def find_runs(roots: list[str]) -> list[Run]:
+    """All runs (<group>/<stem>.npy) under the given cache roots."""
+    paths = sorted(p for d in roots for p in Path(d).expanduser().glob("*/*.npy"))
     if not paths:
-        raise FileNotFoundError(f"no .hdf5 files in {data_dirs}")
+        raise FileNotFoundError(f"no <group>/<stem>.npy runs under {roots}")
     return [Run(p) for p in paths]
 
 
@@ -57,31 +57,29 @@ def split_runs(runs: list[Run], every: int) -> dict[str, list[Run]]:
 
 
 class FrameDataset(Dataset):
-    """All frames after `burn_in` of the given runs, average-pooled by `downsample`."""
+    """Every stored frame with simulation index t >= `burn_in` of the given runs."""
 
-    def __init__(self, runs: list[Run], fields: list[str], burn_in: int, downsample: int,
+    def __init__(self, runs: list[Run], fields: list[str], burn_in: int,
                  mean: torch.Tensor | None = None, std: torch.Tensor | None = None):
-        self.runs, self.fields, self.downsample = runs, fields, downsample
-        self.mean, self.std = mean, std
-        self.index = [(r, t) for r, run in enumerate(runs) for t in range(burn_in, run.n_frames)]
-        self.files: dict[int, h5py.File] = {}  # opened lazily, so each worker has its own handles
+        self.runs, self.mean, self.std = runs, mean, std
+        self.channels = [[run.fields.index(f) for f in fields] for run in runs]
+        self.index = [(r, i) for r, run in enumerate(runs)
+                      for i, t in enumerate(run.t) if t >= burn_in]
+        self.arrays: dict[int, np.ndarray] = {}  # memory-mapped lazily, once per worker
 
     def __len__(self) -> int:
         return len(self.index)
 
-    def read(self, r: int, t: int) -> torch.Tensor:
-        if r not in self.files:
-            self.files[r] = h5py.File(self.runs[r].path, "r")
-        f = self.files[r]
-        x = torch.from_numpy(np.stack([f[k][t] for k in self.fields]).astype(np.float32))
-        if self.downsample > 1:
-            x = F.avg_pool2d(x[None], self.downsample)[0]
-        return x  # (C, H, W), physical units
+    def read(self, r: int, i: int) -> torch.Tensor:
+        if r not in self.arrays:
+            self.arrays[r] = np.load(self.runs[r].path, mmap_mode="r")
+        return torch.from_numpy(np.array(self.arrays[r][i, self.channels[r]]))  # (C, H, W)
 
-    def __getitem__(self, i: int) -> dict:
-        r, t = self.index[i]
+    def __getitem__(self, k: int) -> dict:
+        r, i = self.index[k]
         run = self.runs[r]
-        x = self.read(r, t)
+        t = run.t[i]
+        x = self.read(r, i)
         if self.mean is not None:
             x = (x - self.mean[:, None, None]) / self.std[:, None, None]
         return {"x": x, "run": run.id, "t": t, "fluid": run.fluid, "wall_temp": run.wall_temp}
@@ -91,17 +89,18 @@ class BubbleMLData(L.LightningDataModule):
     """Splits runs into train/val/test and standardizes each field with training statistics.
 
     Args:
-        data_dirs: directories holding the .hdf5/.json pairs.
+        data_dirs: cache roots written by `bubblelat.cache` (each holds <group>/<stem>.npy).
         holdout_every: see `split_runs`. With 20 runs per directory, 5 gives 12/4/4.
-        downsample: integer factor of spatial average pooling, applied when reading.
+        burn_in: skip frames with simulation index below this (the initial transient).
     """
 
-    def __init__(self, data_dirs: list[str], holdout_every: int = 5, fields: list[str] = FIELDS, burn_in: int = 100, downsample: int = 1,
-                 batch_size: int = 16, num_workers: int = 4, stats_frames: int = 64):
+    def __init__(self, data_dirs: list[str], holdout_every: int = 5, fields: list[str] = FIELDS,
+                 burn_in: int = 100, batch_size: int = 16, num_workers: int = 4,
+                 stats_frames: int = 64):
         super().__init__()
         self.data_dirs, self.fields = data_dirs, fields
         self.holdout_every = holdout_every
-        self.burn_in, self.downsample = burn_in, downsample
+        self.burn_in = burn_in
         self.batch_size, self.num_workers = batch_size, num_workers
         self.stats_frames = stats_frames
 
@@ -113,7 +112,7 @@ class BubbleMLData(L.LightningDataModule):
 
     def _stats(self, runs: list[Run]) -> tuple[torch.Tensor, torch.Tensor]:
         """Per-field mean and std over evenly spaced training frames."""
-        raw = FrameDataset(runs, self.fields, self.burn_in, self.downsample)
+        raw = FrameDataset(runs, self.fields, self.burn_in)
         n = min(len(raw), self.stats_frames * len(runs))
         x = torch.stack([raw[i]["x"] for i in np.linspace(0, len(raw) - 1, n).astype(int)])
         return x.mean(dim=(0, 2, 3)), x.std(dim=(0, 2, 3))
@@ -126,8 +125,7 @@ class BubbleMLData(L.LightningDataModule):
         return {f"data/{s}_runs": [r.id for r in runs] for s, runs in self.splits.items()}
 
     def _loader(self, split: str, shuffle: bool = False) -> DataLoader:
-        ds = FrameDataset(self.splits[split], self.fields, self.burn_in, self.downsample,
-                          self.mean, self.std)
+        ds = FrameDataset(self.splits[split], self.fields, self.burn_in, self.mean, self.std)
         return DataLoader(ds, batch_size=self.batch_size, shuffle=shuffle,
                           num_workers=self.num_workers, persistent_workers=self.num_workers > 0)
 
