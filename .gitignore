@@ -12,3 +12,5 @@ wheels/
 # Artifacts
 outputs/
 wandb/
+logs/*
+!logs/.gitkeep

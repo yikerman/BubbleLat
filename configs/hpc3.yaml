@@ -1,0 +1,16 @@
+# HPC3 data and loader settings, layered on top of base.yaml.
+# Assumes 512x512 frames (16 x 16 domain, dx = 1/32); downsample 4 gives 128x128.
+trainer:
+  precision: bf16-mixed       # needs L40S/A30/A100; use 16-mixed on RTX6000 or V100
+data:
+  data_dirs:
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Subcooled-FC72-2D
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Subcooled-LN2-2D
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Subcooled-R515B-2D
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Saturated-FC72-2D
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Saturated-LN2-2D
+    - /share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-Saturated-R515B-2D
+  burn_in: 100
+  downsample: 4
+  batch_size: 32
+  num_workers: 8

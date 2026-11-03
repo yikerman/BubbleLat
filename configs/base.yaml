@@ -7,6 +7,10 @@ trainer:
   devices: 1
   precision: bf16-mixed
   log_every_n_steps: 20
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        save_last: true       # scripts/common.sh tests and resumes from last.ckpt
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:
