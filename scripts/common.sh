@@ -19,9 +19,10 @@ WANDB=(--trainer.logger.init_args.tags "[$EXP]" --trainer.logger.init_args.group
 # a venv is many small files, which /pub and HOME handle badly. Needs `#SBATCH --tmp=...`.
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     export UV_PROJECT_ENVIRONMENT="$TMPDIR/venv" UV_CACHE_DIR="$TMPDIR/uv-cache"
+    export UV_PYTHON_INSTALL_DIR="$TMPDIR/uv-python"  # never load the interpreter from /pub
     export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
 fi
-uv sync --frozen --quiet
+uv sync --frozen
 
 bubblelat() { uv run --frozen --no-sync bubblelat "$@"; }
 
