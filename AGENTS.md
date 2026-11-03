@@ -32,7 +32,8 @@ sbatch scripts/<exp>.slurm        # on HPC3, from the repo root
 ## Rules
 - Commits and PRs: no `Co-Authored-By` or other AI attribution lines.
 - wandb is logged in locally and on HPC3. Use `WANDB_MODE=offline` for local smoke tests.
-- HPC3 (`caoy44@hpc3.rcic.uci.edu`; repo at `/pub/caoy44/BubbleLat`): ask before submitting jobs
+- HPC3 (`caoy44@hpc3.rcic.uci.edu`; repo at `/pub/caoy44/BubbleLat`, no venv there: every job
+  runs `uv sync` into `$TMPDIR`, see `scripts/common.sh`). Ask before submitting jobs
   or writing files. Don't do heavy or random reads of `/share/crsp` (no `du`, no h5py scans on
   login nodes). `/pub` is often slow.
 - Data: `/share/crsp/lab/amowli/share/BubbleML_2/PoolBoiling-{Subcooled,Saturated}-{FC72,LN2,R515B}-2D`.

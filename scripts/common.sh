@@ -15,7 +15,15 @@ CONFIGS=(--config configs/base.yaml --config configs/hpc3.yaml)
 WANDB=(--trainer.logger.init_args.tags "[$EXP]" --trainer.logger.init_args.group "$EXP"
        --trainer.logger.init_args.notes "slurm job $JOB, commit $(git rev-parse --short HEAD)")
 
-bubblelat() { uv run --frozen bubblelat "$@"; }
+# On a compute node, build the venv in node-local scratch ($TMPDIR, deleted when the job ends):
+# a venv is many small files, which /pub and HOME handle badly. Needs `#SBATCH --tmp=...`.
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    export UV_PROJECT_ENVIRONMENT="$TMPDIR/venv" UV_CACHE_DIR="$TMPDIR/uv-cache"
+    export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
+fi
+uv sync --frozen --quiet
+
+bubblelat() { uv run --frozen --no-sync bubblelat "$@"; }
 
 # evaluate MODEL_CONFIG [overrides...]: test a model without training (one wandb run).
 evaluate() {
