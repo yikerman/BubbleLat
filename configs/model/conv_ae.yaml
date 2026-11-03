@@ -1,0 +1,10 @@
+model:
+  model:
+    class_path: bubblelat.models.ConvAE
+    init_args:
+      in_channels: 4
+      channels: [32, 64, 128]
+      latent_channels: 4
+  loss:
+    class_path: bubblelat.losses.MSE
+  lr: 1.0e-3

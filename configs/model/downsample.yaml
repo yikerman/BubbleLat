@@ -1,0 +1,7 @@
+# Baseline: average-pool by `factor`, nearest-neighbor upsample. No parameters, so run
+# `validate` or `test`, not `fit`.
+model:
+  model:
+    class_path: bubblelat.models.Downsample
+    init_args:
+      factor: 4

@@ -1,0 +1,22 @@
+# Shared trainer and data settings. Combine with one file from configs/model/:
+#   uv run bubblelat test --config configs/base.yaml --config configs/model/downsample.yaml
+seed_everything: 0
+trainer:
+  max_epochs: 50
+  accelerator: auto
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 20
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: bubblelat
+      save_dir: outputs
+data:
+  data_dirs: [../BubbleGen/samples]   # BubbleML 2 on HPC3: one directory per fluid
+  holdout_every: 5                    # per directory, by wall temp: i%5==1 val, i%5==3 test
+  fields: [dfun, temperature, velx, vely]
+  burn_in: 0                          # 100 for full BubbleML runs
+  downsample: 1
+  batch_size: 16
+  num_workers: 4
