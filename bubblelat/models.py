@@ -4,12 +4,18 @@ To add a model, subclass `Autoencoder` and implement `encode` and `decode`. Anyt
 extra a loss needs (for a VAE, mu and logvar) goes in the dict that `forward` returns.
 """
 
+from collections.abc import Callable
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 
 class Autoencoder(nn.Module):
+    def init_from_data(self, train_frames: Callable[[int], torch.Tensor]) -> None:
+        """Closed-form initialization, called once before any other use. `train_frames(n)`
+        returns n evenly spaced normalized training frames (n, C, H, W). Nothing by default."""
+
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
@@ -33,6 +39,34 @@ class Downsample(Autoencoder):
 
     def decode(self, z):
         return F.interpolate(z, scale_factor=self.factor, mode="nearest")
+
+
+class POD(Autoencoder):
+    """Proper orthogonal decomposition (PCA): project onto the top `rank` modes of `snapshots`
+    training frames. The optimal linear autoencoder for MSE (Baldi & Hornik 1989), so it is the
+    floor any learned model of the same latent size has to beat. Fitted in closed form, so run
+    `test`, not `fit`.
+    """
+
+    def __init__(self, rank: int = 1024, snapshots: int = 8192):
+        super().__init__()
+        self.rank, self.snapshots = rank, snapshots
+        self.register_buffer("mean", torch.empty(0))   # (D,)
+        self.register_buffer("modes", torch.empty(0))  # (rank, D), orthonormal rows
+
+    def init_from_data(self, train_frames):
+        x = train_frames(self.snapshots)
+        assert len(x) > self.rank, f"POD rank {self.rank} needs more than {len(x)} snapshots"
+        self.shape = x.shape[1:]
+        x = x.flatten(1)
+        self.mean = x.mean(0)
+        self.modes = torch.linalg.svd(x - self.mean, full_matrices=False).Vh[:self.rank]
+
+    def encode(self, x):
+        return (x.flatten(1) - self.mean) @ self.modes.T
+
+    def decode(self, z):
+        return (z @ self.modes + self.mean).unflatten(1, self.shape)
 
 
 def conv_block(c_in: int, c_out: int) -> nn.Sequential:

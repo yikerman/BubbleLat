@@ -110,12 +110,21 @@ class BubbleMLData(L.LightningDataModule):
         self.splits = split_runs(find_runs(self.data_dirs), self.holdout_every)
         self.mean, self.std = self._stats(self.splits["train"])
 
+    @staticmethod
+    def _spaced(ds: FrameDataset, n: int) -> torch.Tensor:
+        """At most n evenly spaced frames of a dataset, (n, C, H, W)."""
+        n = min(n, len(ds))
+        return torch.stack([ds[i]["x"] for i in np.linspace(0, len(ds) - 1, n).astype(int)])
+
     def _stats(self, runs: list[Run]) -> tuple[torch.Tensor, torch.Tensor]:
         """Per-field mean and std over evenly spaced training frames."""
-        raw = FrameDataset(runs, self.fields, self.burn_in)
-        n = min(len(raw), self.stats_frames * len(runs))
-        x = torch.stack([raw[i]["x"] for i in np.linspace(0, len(raw) - 1, n).astype(int)])
+        x = self._spaced(FrameDataset(runs, self.fields, self.burn_in), self.stats_frames * len(runs))
         return x.mean(dim=(0, 2, 3)), x.std(dim=(0, 2, 3))
+
+    def train_frames(self, n: int) -> torch.Tensor:
+        """At most n evenly spaced normalized training frames, for closed-form model fits."""
+        train = FrameDataset(self.splits["train"], self.fields, self.burn_in, self.mean, self.std)
+        return self._spaced(train, n)
 
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         return x * self.std.to(x)[:, None, None] + self.mean.to(x)[:, None, None]

@@ -1,0 +1,8 @@
+# Baseline: POD (PCA) with `rank` modes, fitted in closed form on `snapshots` training frames.
+# Nothing to train by gradient descent, so run `validate` or `test`, not `fit`.
+model:
+  model:
+    class_path: bubblelat.models.POD
+    init_args:
+      rank: 1024
+      snapshots: 8192

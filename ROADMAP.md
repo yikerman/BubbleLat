@@ -19,7 +19,7 @@ representation score, and the Spearman rank correlation between the two.
 - [x] Build the 128×128 float32 cache from the WebDataset shards (`scripts/build_cache.slurm`): built Nov 3, 94 runs; the shards have since been removed
 - [ ] Rerun the test drive on the cache
 - [ ] Baselines at 2–3 compression ratios: Downsample, POD, ConvAE, the earlier VAE
-- [ ] Reconstruction metrics: VRMSE per field; spectral error by wavenumber band; vapor IoU and fraction
+- [x] Reconstruction metrics: VRMSE per field; spectral error by wavenumber band; vapor IoU and fraction
 - [ ] Latent dump (`predict`) for every model, plus ridge probes with POD and random-encoder controls
 - [ ] Slides: baselines, the first reconstruction-vs-probe scatter, the revised plan
 

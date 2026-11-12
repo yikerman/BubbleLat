@@ -3,6 +3,7 @@
 wandb layout:
   train/loss                      every step
   val/<metric>/<field>            every validation epoch, in physical units
+  val/vapor/{iou,frac_err}        vapor mask (dfun > 0) agreement
   test/<metric>/<field>           once, plus a "test/table" with one row per field
   <stage>/samples                 target | reconstruction | error for one fixed frame
 """
@@ -19,7 +20,7 @@ import wandb
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
-from .metrics import METRICS, field_errors
+from .metrics import METRICS, field_errors, vapor_errors
 from .models import Autoencoder
 
 
@@ -32,9 +33,10 @@ class AutoencoderModule(L.LightningModule):
 
     def setup(self, stage: str) -> None:
         dm = self.trainer.datamodule
-        z = self.model.encode(torch.zeros(1, len(dm.fields), 64, 64))
+        self.model.init_from_data(dm.train_frames)
+        x = dm.train_frames(1)
         info = {"model/params": sum(p.numel() for p in self.model.parameters()),
-                "model/compression_64px": len(dm.fields) * 64 * 64 / z.numel(), **dm.describe()}
+                "model/compression": x.numel() / self.model.encode(x).numel(), **dm.describe()}
         if self.logger:
             self.logger.log_hyperparams(info)
 
@@ -56,6 +58,9 @@ class AutoencoderModule(L.LightningModule):
         out = self.model(x)
         pred, target = dm.denormalize(out["xhat"].float()), dm.denormalize(x.float())
         metrics = field_errors(pred, target, dm.fields)
+        if "dfun" in dm.fields:
+            i = dm.fields.index("dfun")
+            metrics |= vapor_errors(pred[:, i], target[:, i])
         if self.loss is not None:
             metrics |= self.loss(out, x)
         for k, v in metrics.items():
