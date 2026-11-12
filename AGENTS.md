@@ -39,7 +39,9 @@ sbatch scripts/<exp>.slurm        # on HPC3, from the repo root
   runs `uv sync` into `$TMPDIR`, see `scripts/common.sh`). Ask before submitting jobs
   or writing files. Don't do heavy or random reads of `/share/crsp` (no `du`, no h5py scans on
   login nodes).
-- Data: source is the pre-shuffled WebDataset `/share/crsp/lab/amowli/share/BubbleML_2_poolboiling_wds`
-  (725 shards, 32-frame 8-field 512x512 clips; stream it, never random-read). The 128x128 cache lives
-  at `/pub/caoy44/bubblelat_cache_128` (`scripts/build_cache.slurm`); jobs copy it to `$TMPDIR`.
-- Deadlines: check-in Nov 12, presentation Dec 8, report Dec 11 (6 pages + reproducible README).
+- Data: the 128x128 cache at `/pub/caoy44/bubblelat_cache_128` is the working dataset (94 runs in 5
+  directories; no Subcooled-R515B); jobs copy it to `$TMPDIR`. It was built 2026-11-03 from the
+  WebDataset `BubbleML_2_poolboiling_wds`, which has since been removed from the share, so it cannot
+  be rebuilt that way: don't delete or overwrite it. The raw HDF5 runs are still under
+  `/share/crsp/lab/amowli/share/BubbleML_2`.
+- Deadlines: check-in Nov 15, presentation Dec 8, report Dec 11 (6 pages + reproducible README).

@@ -13,10 +13,11 @@ representation score, and the Spearman rank correlation between the two.
 
 ## Phases
 
-### 1. Check-in (Nov 12): baselines and harness
+### 1. Check-in (Nov 15): baselines and harness
 - [x] Framework: data, models, losses, metrics, Lightning CLI, wandb, Slurm scripts
 - [x] Test drive on HPC3 (`scripts/conv_ae_smoke.slurm`), reading HDF5 directly: works, but I/O-bound
-- [ ] Build the 128×128 float32 cache from the WebDataset shards (`scripts/build_cache.slurm`); rerun the test drive on it
+- [x] Build the 128×128 float32 cache from the WebDataset shards (`scripts/build_cache.slurm`): built Nov 3, 94 runs; the shards have since been removed
+- [ ] Rerun the test drive on the cache
 - [ ] Baselines at 2–3 compression ratios: Downsample, POD, ConvAE, the earlier VAE
 - [ ] Reconstruction metrics: VRMSE per field; spectral error by wavenumber band; vapor IoU and fraction
 - [ ] Latent dump (`predict`) for every model, plus ridge probes with POD and random-encoder controls
