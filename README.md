@@ -11,7 +11,8 @@ Learned compression of BubbleML single frames, and how meaningful the resulting 
 | `bubblelat/models.py` | `Autoencoder` interface (`encode`, `decode`), `Downsample` and `POD` baselines, `ConvAE` |
 | `bubblelat/losses.py` | `MSE` (a loss returns a dict whose `"loss"` entry is optimized) |
 | `bubblelat/metrics.py` | MAE, RMSE, VRMSE and error by wavenumber band per field, vapor IoU and fraction, in physical units |
-| `bubblelat/module.py` | Lightning module: training, val/test metrics, wandb tables and sample images |
+| `bubblelat/module.py` | Lightning module: training, val/test metrics, wandb tables and sample images, latent dump |
+| `bubblelat/probe.py` | per-frame labels (vapor fraction, interface length, bubble count) and the ridge readout probe |
 | `bubblelat/cli.py` | `bubblelat` command (LightningCLI), names wandb runs |
 | `configs/` | `base.yaml` (trainer + data), plus one file per model in `configs/model/` |
 
@@ -28,6 +29,10 @@ uv run bubblelat test --config outputs/wandb/<run>/files/config.yaml \
 ```
 
 Override any argument from the command line, e.g. `--model.model.factor 8`.
+
+`bubblelat predict` (same arguments as `test`, plus `--trainer.default_root_dir <dir>`) writes the
+latent of every 8th frame of each split to `<dir>/latents.npz` and logs ridge probe scores, fitted on
+the training runs and scored on the test runs. `python -m bubblelat.probe <npz>` reruns the probe.
 
 Training reads a cache of per-run float32 arrays (`bubblelat/cache.py`). Locally, build it from the
 sample files once: `uv run python -m bubblelat.cache hdf5 ../BubbleGen/samples --out data/samples`.

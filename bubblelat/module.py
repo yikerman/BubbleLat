@@ -6,23 +6,29 @@ wandb layout:
   val/vapor/{iou,frac_err}        vapor mask (dfun > 0) agreement
   test/<metric>/<field>           once, plus a "test/table" with one row per field
   <stage>/samples                 target | reconstruction | error for one fixed frame
+  probe/<target>                  `predict`: ridge readout scores of the latent (see probe.py)
+
+`predict` also writes the latents and their labels to <trainer.default_root_dir>/latents.npz.
 """
 
 from collections import defaultdict
+from pathlib import Path
 
 import lightning as L
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
-from .data import denormalize
+from .data import SPLITS, denormalize
 from .metrics import METRICS, field_errors, vapor_errors
 from .models import Autoencoder
+from .probe import frame_labels, ridge_probe
 
 
 class AutoencoderModule(L.LightningModule):
@@ -106,6 +112,30 @@ class AutoencoderModule(L.LightningModule):
                 fig.colorbar(im, ax=ax, shrink=0.8)
         fig.suptitle(f"{run}  t={t}")
         return fig
+
+    # predict: dump the latent and labels of every strided frame, then probe them
+
+    def on_predict_epoch_start(self):
+        self._dump = defaultdict(list)
+
+    def predict_step(self, batch, _, dataloader_idx: int = 0):
+        dm, x, split = self.trainer.datamodule, batch["x"], SPLITS[dataloader_idx]
+        dfun = denormalize(x.float(), batch)[:, dm.fields.index("dfun")]
+        rows = {"z": self.model.encode(x).float().cpu(), "t": batch["t"].cpu(),
+                "wall_temp": batch["wall_temp"].cpu(), "run": batch["run"], "fluid": batch["fluid"],
+                **frame_labels(dfun)}
+        for k, v in rows.items():
+            self._dump[f"{split}/{k}"].append(np.asarray(v))
+
+    def on_predict_epoch_end(self):
+        data = {k: np.concatenate(v) for k, v in self._dump.items()}
+        path = Path(self.trainer.default_root_dir) / "latents.npz"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(path, **data)
+        scores = ridge_probe(data)
+        print(f"latents: {path}\n" + "\n".join(f"{k:24s} {v: .4f}" for k, v in scores.items()))
+        if self.logger:
+            self.logger.log_metrics(scores)
 
     def configure_optimizers(self):
         params = [p for p in self.parameters() if p.requires_grad]

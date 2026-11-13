@@ -36,14 +36,27 @@ stage_cache() {
     STAGED=1
 }
 
-# evaluate MODEL_CONFIG [overrides...]: test a model without training (one wandb run).
+# probe ID MODEL_CONFIG [overrides...]: dump the latents of run ID to node-local scratch and log
+# the readout probe scores to the same wandb run as its reconstruction metrics.
+probe() {
+    local id="$1" model="$2"; shift 2
+    stage_cache
+    bubblelat predict "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" \
+        --trainer.logger.init_args.id "$id" --trainer.logger.init_args.resume allow \
+        --trainer.default_root_dir "${TMPDIR:-outputs}/latents/$id" "$@"
+}
+
+# evaluate MODEL_CONFIG [overrides...]: test and probe a model without training (one wandb run).
 evaluate() {
     local model="$1"; shift
     stage_cache
-    bubblelat test "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" "$@"
+    local id="$EXP-$JOB-e$((NEVAL = ${NEVAL:-0} + 1))"
+    bubblelat test "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" \
+        --trainer.logger.init_args.id "$id" --trainer.logger.init_args.resume allow "$@"
+    probe "$id" "$model" "$@"
 }
 
-# fit_test RUN MODEL_CONFIG [overrides...]: train, then test last.ckpt, both in one wandb run.
+# fit_test RUN MODEL_CONFIG [overrides...]: train, then test and probe last.ckpt, all in one wandb run.
 # RUN must be unique per run within the job; the wandb id is "<exp>-<job>-<RUN>", so a
 # requeued job resumes the same wandb run and continues training from last.ckpt.
 fit_test() {
@@ -56,4 +69,5 @@ fit_test() {
     [[ -f "$ckpt" ]] && resume=(--ckpt_path "$ckpt")
     bubblelat fit "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" "${ids[@]}" "$@" "${resume[@]}"
     bubblelat test "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" "${ids[@]}" "$@" --ckpt_path "$ckpt"
+    probe "$id" "$model" "$@" --ckpt_path "$ckpt"
 }

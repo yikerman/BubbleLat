@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 FIELDS = ["dfun", "temperature", "velx", "vely"]
+SPLITS = ["train", "val", "test"]
 
 
 class Run:
@@ -74,17 +75,17 @@ def split_runs(runs: list[Run], every: int) -> dict[str, list[Run]]:
 
 
 class FrameDataset(Dataset):
-    """Every stored frame with simulation index t >= `burn_in` of the given runs."""
+    """Every `stride`-th stored frame with simulation index t >= `burn_in` of the given runs."""
 
     def __init__(self, runs: list[Run], fields: list[str], burn_in: int,
-                 mean: torch.Tensor | float = 0.0, std: torch.Tensor | float = 1.0):
+                 mean: torch.Tensor | float = 0.0, std: torch.Tensor | float = 1.0, stride: int = 1):
         self.runs = runs
         units = [run.units(fields) for run in runs]
         self.shift = [shift + scale * mean for shift, scale in units]  # per run, (C,)
         self.scale = [scale * std for _, scale in units]
         self.channels = [[run.fields.index(f) for f in fields] for run in runs]
         self.index = [(r, i) for r, run in enumerate(runs)
-                      for i, t in enumerate(run.t) if t >= burn_in]
+                      for i, t in enumerate(run.t) if t >= burn_in][::stride]
         self.arrays: dict[int, np.ndarray] = {}  # memory-mapped lazily, once per worker
 
     def __len__(self) -> int:
@@ -118,12 +119,15 @@ class BubbleMLData(L.LightningDataModule):
         data_dirs: cache roots written by `bubblelat.cache` (each holds <group>/<stem>.npy).
         holdout_every: see `split_runs`. With 20 runs per directory, 5 gives 12/4/4.
         burn_in: skip frames with simulation index below this (the initial transient).
+        predict_stride: `predict` dumps the latent of every n-th frame of each split
+            (neighboring frames are nearly identical).
     """
 
     def __init__(self, data_dirs: list[str], holdout_every: int = 5, fields: list[str] = FIELDS,
                  burn_in: int = 100, batch_size: int = 16, num_workers: int = 4,
-                 stats_frames: int = 64):
+                 stats_frames: int = 64, predict_stride: int = 8):
         super().__init__()
+        self.predict_stride = predict_stride
         self.data_dirs, self.fields = data_dirs, fields
         self.holdout_every = holdout_every
         self.burn_in = burn_in
@@ -156,8 +160,8 @@ class BubbleMLData(L.LightningDataModule):
         """Split summary, logged to wandb so every run records exactly what it saw."""
         return {f"data/{s}_runs": [r.id for r in runs] for s, runs in self.splits.items()}
 
-    def _loader(self, split: str, shuffle: bool = False) -> DataLoader:
-        ds = FrameDataset(self.splits[split], self.fields, self.burn_in, self.mean, self.std)
+    def _loader(self, split: str, shuffle: bool = False, stride: int = 1) -> DataLoader:
+        ds = FrameDataset(self.splits[split], self.fields, self.burn_in, self.mean, self.std, stride)
         return DataLoader(ds, batch_size=self.batch_size, shuffle=shuffle,
                           num_workers=self.num_workers, persistent_workers=self.num_workers > 0)
 
@@ -169,3 +173,6 @@ class BubbleMLData(L.LightningDataModule):
 
     def test_dataloader(self):
         return self._loader("test")
+
+    def predict_dataloader(self):
+        return [self._loader(s, stride=self.predict_stride) for s in SPLITS]

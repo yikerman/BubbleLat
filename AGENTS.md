@@ -12,11 +12,13 @@ single frames, then whether the latents mean anything. See `ROADMAP.md` for plan
 
 ## Layout
 - `bubblelat/data.py` · `models.py` · `losses.py` · `metrics.py` · `module.py` · `cli.py`
+- `bubblelat/probe.py`: per-frame labels and the ridge readout probe; `bubblelat predict` dumps
+  latents and logs `probe/*` to the model's wandb run.
 - `bubblelat/cache.py`: builds the training cache, one float32 `(T, C, H, W)` `.npy` + `.json` per run.
   Everything trains and evaluates at 128x128 (512 average-pooled by 4), in full precision.
 - `configs/base.yaml` (local, sample data), `configs/hpc3.yaml` (cluster data), `configs/model/*.yaml`
 - `scripts/*.slurm`: one experiment per script. The job name is the wandb tag and group;
-  `scripts/common.sh` holds the shared helpers (`evaluate`, `fit_test`).
+  `scripts/common.sh` holds the shared helpers (`evaluate`, `fit_test`, `probe`).
 
 ## Extending
 - Model: subclass `Autoencoder` (`encode`, `decode`), and add a `configs/model/<name>.yaml`.
