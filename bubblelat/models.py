@@ -97,3 +97,29 @@ class ConvAE(Autoencoder):
 
     def decode(self, z):
         return self.decoder(z)
+
+
+class ConvVAE(ConvAE):
+    """ConvAE whose encoder outputs a diagonal Gaussian q(z|x) per latent element. Same backbone
+    and latent shape as ConvAE, so the two differ only in the loss (`BetaVAE`).
+
+    The latent is the mean: `encode` returns it, and outside training the reconstruction decodes
+    it, so metrics and probes see the same deterministic code. Training decodes a sample.
+    """
+
+    def __init__(self, in_channels: int = 4, channels: tuple[int, ...] = (32, 64, 128),
+                 latent_channels: int = 4):
+        super().__init__(in_channels, channels, latent_channels)
+        self.encoder[-1] = nn.Conv2d(list(channels)[-1], 2 * latent_channels, 1)
+
+    def moments(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        mu, logvar = self.encoder(x).chunk(2, dim=1)
+        return mu, logvar
+
+    def encode(self, x):
+        return self.moments(x)[0]
+
+    def forward(self, x):
+        mu, logvar = self.moments(x)
+        z = mu + torch.randn_like(mu) * (0.5 * logvar).exp() if self.training else mu
+        return {"z": z, "xhat": self.decode(z), "mu": mu, "logvar": logvar}
