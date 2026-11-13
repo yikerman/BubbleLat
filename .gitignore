@@ -15,3 +15,4 @@ wandb/
 logs/*
 !logs/.gitkeep
 data/
+figures/
