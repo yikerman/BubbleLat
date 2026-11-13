@@ -38,6 +38,8 @@ def targets(data: dict) -> tuple[dict[str, torch.Tensor], list[str]]:
 
     wall_temp is standardized within its run directory (fluid and regime) with training
     statistics: across directories it would only measure which fluid a frame shows.
+    Neither wall_temp nor the fluid is visible in degrees: `Run.units` maps every run's
+    temperature to 0..1, so both readouts work only through the flow (bubble size and shape).
     """
     group = {s: np.array([r.split("/")[0] for r in data[f"{s}/run"]]) for s in SPLITS}
     wall = {s: torch.from_numpy(data[f"{s}/wall_temp"]).double() for s in SPLITS}
