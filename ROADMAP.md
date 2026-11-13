@@ -25,6 +25,8 @@ representation score, and the Spearman rank correlation between the two.
 
 ### 2. Final (Dec 8 / Dec 11): ablations and representation
 - Ablations on FC-72: compression ratio, β, loss. 3 seeds for the final pick.
+- Attention backbone: a small ViT autoencoder (patchify, transformer blocks from `timm`, linear
+  decode) at the ConvAE latent sizes, as the second architecture family.
 - LN2 and R515B for generalization; cross-fluid transfer (fit the probe on FC-72, test on LN2).
 - Representation metrics, cheapest first:
   - **Readout (trivial probes):** ridge, then a 1-hidden-layer MLP, predicting fluid, wall temperature,
