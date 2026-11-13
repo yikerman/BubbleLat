@@ -5,6 +5,11 @@ shape (T, C, H, W), float32 and already at training resolution, plus a `<stem>.j
 its metadata, field names and simulation frame indices "t". A run's id is "<group>/<stem>",
 e.g. "PoolBoiling-Subcooled-FC72-2D/Twall_100". Splits are made by run, never by frame,
 because neighboring frames are nearly identical.
+
+Normalization is one affine map per run and field, x_norm = (x - shift) / scale. It composes
+the run's own units (`Run.units`: temperature becomes (T - T_bulk) / (T_wall - T_bulk), which is
+0..1 for every fluid) with the training mean and std of the resulting fields. Every sample
+carries its "shift" and "scale", and `denormalize` inverts the map back to physical units.
 """
 
 import json
@@ -29,6 +34,18 @@ class Run:
         self.wall_temp = float(self.meta["heater"]["wallTemp"])
         self.fields: list[str] = self.meta["fields"]
         self.t: list[int] = self.meta["t"]  # simulation frame index of each stored frame
+
+    def units(self, fields: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Per-field (shift, scale) that make this run's fields comparable across runs.
+
+        Temperature is stored in degrees, and the fluids sit hundreds of degrees apart while a
+        frame varies by T_wall - T_bulk, so it is rescaled to that range. The other fields are
+        already non-dimensional (identity).
+        """
+        bulk = float(self.meta["bulk_temp"])
+        shift = torch.tensor([bulk if f == "temperature" else 0.0 for f in fields])
+        scale = torch.tensor([self.wall_temp - bulk if f == "temperature" else 1.0 for f in fields])
+        return shift, scale
 
 
 def find_runs(roots: list[str]) -> list[Run]:
@@ -60,8 +77,11 @@ class FrameDataset(Dataset):
     """Every stored frame with simulation index t >= `burn_in` of the given runs."""
 
     def __init__(self, runs: list[Run], fields: list[str], burn_in: int,
-                 mean: torch.Tensor | None = None, std: torch.Tensor | None = None):
-        self.runs, self.mean, self.std = runs, mean, std
+                 mean: torch.Tensor | float = 0.0, std: torch.Tensor | float = 1.0):
+        self.runs = runs
+        units = [run.units(fields) for run in runs]
+        self.shift = [shift + scale * mean for shift, scale in units]  # per run, (C,)
+        self.scale = [scale * std for _, scale in units]
         self.channels = [[run.fields.index(f) for f in fields] for run in runs]
         self.index = [(r, i) for r, run in enumerate(runs)
                       for i, t in enumerate(run.t) if t >= burn_in]
@@ -79,14 +99,20 @@ class FrameDataset(Dataset):
         r, i = self.index[k]
         run = self.runs[r]
         t = run.t[i]
-        x = self.read(r, i)
-        if self.mean is not None:
-            x = (x - self.mean[:, None, None]) / self.std[:, None, None]
-        return {"x": x, "run": run.id, "t": t, "fluid": run.fluid, "wall_temp": run.wall_temp}
+        shift, scale = self.shift[r], self.scale[r]
+        x = (self.read(r, i) - shift[:, None, None]) / scale[:, None, None]
+        return {"x": x, "shift": shift, "scale": scale, "run": run.id, "t": t,
+                "fluid": run.fluid, "wall_temp": run.wall_temp}
+
+
+def denormalize(x: torch.Tensor, batch: dict) -> torch.Tensor:
+    """Normalized (B, C, H, W) fields back to physical units, with the batch's own maps."""
+    return x * batch["scale"][:, :, None, None].to(x) + batch["shift"][:, :, None, None].to(x)
 
 
 class BubbleMLData(L.LightningDataModule):
-    """Splits runs into train/val/test and standardizes each field with training statistics.
+    """Splits runs into train/val/test and standardizes each field with training statistics
+    (taken after each run's own `units`).
 
     Args:
         data_dirs: cache roots written by `bubblelat.cache` (each holds <group>/<stem>.npy).
@@ -117,7 +143,7 @@ class BubbleMLData(L.LightningDataModule):
         return torch.stack([ds[i]["x"] for i in np.linspace(0, len(ds) - 1, n).astype(int)])
 
     def _stats(self, runs: list[Run]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Per-field mean and std over evenly spaced training frames."""
+        """Per-field mean and std over evenly spaced training frames, in run units."""
         x = self._spaced(FrameDataset(runs, self.fields, self.burn_in), self.stats_frames * len(runs))
         return x.mean(dim=(0, 2, 3)), x.std(dim=(0, 2, 3))
 
@@ -125,9 +151,6 @@ class BubbleMLData(L.LightningDataModule):
         """At most n evenly spaced normalized training frames, for closed-form model fits."""
         train = FrameDataset(self.splits["train"], self.fields, self.burn_in, self.mean, self.std)
         return self._spaced(train, n)
-
-    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.std.to(x)[:, None, None] + self.mean.to(x)[:, None, None]
 
     def describe(self) -> dict:
         """Split summary, logged to wandb so every run records exactly what it saw."""

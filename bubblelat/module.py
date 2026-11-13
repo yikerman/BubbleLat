@@ -20,6 +20,7 @@ import wandb
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
+from .data import denormalize
 from .metrics import METRICS, field_errors, vapor_errors
 from .models import Autoencoder
 
@@ -56,7 +57,7 @@ class AutoencoderModule(L.LightningModule):
     def _eval_step(self, batch, batch_idx):
         dm, x = self.trainer.datamodule, batch["x"]
         out = self.model(x)
-        pred, target = dm.denormalize(out["xhat"].float()), dm.denormalize(x.float())
+        pred, target = denormalize(out["xhat"].float(), batch), denormalize(x.float(), batch)
         metrics = field_errors(pred, target, dm.fields)
         if "dfun" in dm.fields:
             i = dm.fields.index("dfun")
