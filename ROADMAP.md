@@ -20,7 +20,7 @@ representation score, and the Spearman rank correlation between the two.
 - [ ] Rerun the test drive on the cache
 - [ ] Baselines at 2–3 compression ratios: Downsample, POD, ConvAE, the earlier VAE
 - [x] Reconstruction metrics: VRMSE per field; spectral error by wavenumber band; vapor IoU and fraction
-- [ ] Latent dump (`predict`) for every model, plus ridge probes with POD and random-encoder controls
+- [x] Latent dump (`predict`) for every model, plus ridge probes with POD and random-encoder controls
 - [ ] Slides: baselines, the first reconstruction-vs-probe scatter, the revised plan
 
 ### 2. Final (Dec 8 / Dec 11): ablations and representation
