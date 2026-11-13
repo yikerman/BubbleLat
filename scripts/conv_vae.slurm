@@ -5,7 +5,7 @@
 #SBATCH --job-name=conv_vae
 #SBATCH --array=0-1
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:A30:1   # torch 2.14 cu130 has no kernels for the V100s in this partition
 #SBATCH --account=eecs195221_class_gpu
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
