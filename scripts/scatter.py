@@ -34,7 +34,7 @@ def load() -> list[dict]:
     for run in api.runs(f"{api.default_entity}/bubblelat"):
         s = run.summary
         if run.state == "finished" and "probe/vapor_frac" in s and "test/vrmse/dfun" in s:
-            seeds[run.group, run.name][run.id.split("-")[-2]].append(run)
+            seeds[run.group, run.name][run.id.split("-")[1]].append(run)  # "<exp>-<job>-<run>"
     rows = []
     for (group, name), jobs in seeds.items():
         runs = jobs[max(jobs, key=int)]
@@ -69,9 +69,15 @@ def main() -> None:
                     ms=9, color=color, mfc=color if filled else SURFACE, mec=color, mew=2,
                     elinewidth=1, label=None if label in seen else label)
         seen.add(label)
-        note = f"{r['compression']}×" + (f", β={r['beta']}" if r["beta"] else "")
-        ax.annotate(note, (r["err"], r["probe"]), xytext=(7, 6), textcoords="offset points",
-                    fontsize=9, color="#52514e")
+        # ConvAE and its beta-VAE variants nearly coincide: label ConvAE on the left and stack
+        # the beta labels on the right.
+        if r["beta"]:
+            note, offset, ha = f"β={r['beta']}", (9, 9 if r["beta"] >= 0.1 else -14), "left"
+        else:
+            note, offset, ha = f"{r['compression']}×", (-7, 6) if r["family"] == "convae" else (7, 6), \
+                "right" if r["family"] == "convae" else "left"
+        ax.annotate(note, (r["err"], r["probe"]), xytext=offset, textcoords="offset points",
+                    fontsize=9, color="#52514e", ha=ha)
     ax.set_xscale("log")
     ax.set_xticks([0.15, 0.2, 0.3, 0.5, 0.75, 1.0], ["0.15", "0.2", "0.3", "0.5", "0.75", "1.0"])
     ax.minorticks_off()
