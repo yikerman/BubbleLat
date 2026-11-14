@@ -2,6 +2,7 @@
 
 wandb layout:
   train/loss                      every step
+  lr-AdamW                        learning rate (cosine decay to zero over the run)
   val/<metric>/<field>            every validation epoch, in physical units
   val/vapor/{iou,frac_err}        vapor mask (dfun > 0) agreement
   test/<metric>/<field>           once, plus a "test/table" with one row per field
@@ -141,4 +142,8 @@ class AutoencoderModule(L.LightningModule):
         params = [p for p in self.parameters() if p.requires_grad]
         if not params:  # e.g. the Downsample baseline: nothing to train
             return None
-        return torch.optim.AdamW(params, lr=self.lr, weight_decay=self.weight_decay)
+        opt = torch.optim.AdamW(params, lr=self.lr, weight_decay=self.weight_decay)
+        # Cosine decay to zero over the whole run. At a constant rate the validation loss jumped
+        # severalfold between late epochs, so a run's score depended on where it stopped.
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, self.trainer.estimated_stepping_batches)
+        return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "interval": "step"}}

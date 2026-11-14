@@ -11,6 +11,9 @@ trainer:
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
         save_last: true       # scripts/common.sh tests and resumes from last.ckpt
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:
