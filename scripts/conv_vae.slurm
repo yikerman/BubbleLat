@@ -1,7 +1,7 @@
 #!/bin/bash
-# beta-VAE on the ConvAE backbone at 64x compression (conv_ae_mse is the beta = 0 point), 3 seeds
+# beta-VAE on the ConvAE backbone at 64x compression (conv_ae_ratio task 3 is the beta = 0 point), 3 seeds
 # per beta. One array task per beta, one wandb run per seed.
-# Paid partition and class GPU account, as in conv_ae_mse.slurm.
+# Paid partition and class GPU account, as in conv_ae_ratio.slurm.
 #SBATCH --job-name=conv_vae
 #SBATCH --array=0-1
 #SBATCH --partition=gpu

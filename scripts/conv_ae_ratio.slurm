@@ -1,9 +1,13 @@
 #!/bin/bash
-# ConvAE + MSE at 256x, 16x and 4x compression (1, 16 and 64 latent channels; conv_ae_mse is the
-# 64x point with 4), 3 seeds each. One array task per latent size, one wandb run per seed.
-# Paid partition and class GPU account, as in conv_ae_mse.slurm.
+# ConvAE + MSE at 4x, 16x, 64x and 256x compression, 3 seeds each. One array task per ratio, one
+# wandb run per seed.
+# The ratio is set by the number of pooling levels (4^levels) with 4 latent channels throughout.
+# Pooling further and adding latent channels reaches the same ratios with 1.3x to 4x the error,
+# and 1 latent channel is worse still.
+# Paid partition, class GPU account (gpu32 needs a GPU32 account, which we do not have):
+# free-gpu32 cancels preempted jobs, and a resubmitted job gets a new id, so it would not resume.
 #SBATCH --job-name=conv_ae_ratio
-#SBATCH --array=1,16,64
+#SBATCH --array=1-4
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:A30:1   # torch 2.14 cu130 has no kernels for the V100s in this partition
 #SBATCH --account=eecs195221_class_gpu
@@ -15,8 +19,10 @@
 
 source scripts/common.sh
 
-c="$SLURM_ARRAY_TASK_ID"
+levels="$SLURM_ARRAY_TASK_ID"
+widths=(32 64 128 128)
+channels="[$(IFS=,; echo "${widths[*]:0:$levels}")]"
 for seed in 0 1 2; do
-    fit_test "c$c-s$seed" configs/model/conv_ae.yaml --seed_everything "$seed" \
-        --model.model.latent_channels "$c"
+    fit_test "L$levels-s$seed" configs/model/conv_ae.yaml --seed_everything "$seed" \
+        --model.model.channels "$channels" --model.model.latent_channels 4
 done

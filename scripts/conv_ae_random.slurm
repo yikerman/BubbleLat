@@ -1,5 +1,5 @@
 #!/bin/bash
-# Probe control: the ConvAE of conv_ae_mse at random initialization, never trained. Its probe
+# Probe control: the 64x ConvAE (conv_ae_ratio task 3) at random initialization, never trained. Its probe
 # scores are what the architecture alone reads out. One wandb run (test + probe) per seed.
 #SBATCH --job-name=conv_ae_random
 #SBATCH --partition=free-gpu32

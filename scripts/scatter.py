@@ -33,7 +33,9 @@ def load() -> list[dict]:
     seeds = defaultdict(lambda: defaultdict(list))  # (group, name) -> job -> runs
     for run in api.runs(f"{api.default_entity}/bubblelat"):
         s = run.summary
-        if run.state == "finished" and "probe/vapor_frac" in s and "test/vrmse/dfun" in s:
+        # Runs trained before the cosine learning-rate decay are tagged "constant-lr" in wandb.
+        if (run.state == "finished" and "probe/vapor_frac" in s and "test/vrmse/dfun" in s
+                and "constant-lr" not in run.tags):
             seeds[run.group, run.name][run.id.split("-")[1]].append(run)  # "<exp>-<job>-<run>"
     rows = []
     for (group, name), jobs in seeds.items():
