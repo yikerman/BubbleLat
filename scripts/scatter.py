@@ -74,8 +74,13 @@ def main() -> None:
         if r["beta"]:
             note, offset, ha = f"β={r['beta']}", (9, 9 if r["beta"] >= 0.1 else -14), "left"
         else:
-            note, offset, ha = f"{r['compression']}×", (-7, 6) if r["family"] == "convae" else (7, 6), \
-                "right" if r["family"] == "convae" else "left"
+            # Points of one family that coincide share one label, e.g. "4×, 16×".
+            twins = [q for q in rows if q["family"] == r["family"] and not q["beta"]
+                     and abs(np.log(q["err"] / r["err"])) < 0.03 and abs(q["probe"] - r["probe"]) < 0.01]
+            if r is not twins[0]:
+                continue
+            note = ", ".join(f"{c}×" for c in sorted(q["compression"] for q in twins))
+            offset, ha = ((-7, 6), "right") if r["family"] == "convae" else ((7, 6), "left")
         ax.annotate(note, (r["err"], r["probe"]), xytext=offset, textcoords="offset points",
                     fontsize=9, color="#52514e", ha=ha)
     ax.set_xscale("log")
