@@ -86,7 +86,7 @@ def main() -> None:
         ax.annotate(note, (r["err"], r["probe"]), xytext=offset, textcoords="offset points",
                     fontsize=9, color="#52514e", ha=ha)
     ax.set_xscale("log")
-    ax.set_xticks([0.15, 0.2, 0.3, 0.5, 0.75, 1.0], ["0.15", "0.2", "0.3", "0.5", "0.75", "1.0"])
+    ax.set_xticks([0.05, 0.1, 0.2, 0.3, 0.5, 1.0], ["0.05", "0.1", "0.2", "0.3", "0.5", "1.0"])
     ax.minorticks_off()
     ax.set_xlabel("reconstruction error: test VRMSE, mean of 4 fields (log scale, lower is better)")
     ax.set_ylabel("readout: ridge probe R², mean of 4 targets")
