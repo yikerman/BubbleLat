@@ -6,6 +6,7 @@ wandb layout:
   val/<metric>/<field>            every validation epoch, in physical units
   val/vapor/{iou,frac_err}        vapor mask (dfun > 0) agreement
   test/<metric>/<field>           once, plus a "test/table" with one row per field
+  spectrum (run summary)          test: per field, mean target and error power per wavenumber shell
   <stage>/samples                 target | reconstruction | error for one fixed frame
   probe/<target>                  `predict`: ridge readout scores of the latent (see probe.py)
 
@@ -27,7 +28,7 @@ from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
 from .data import SPLITS, denormalize
-from .metrics import METRICS, field_errors, vapor_errors
+from .metrics import METRICS, field_errors, radial_power, vapor_errors
 from .models import Autoencoder
 from .probe import frame_labels, ridge_probe
 
@@ -58,6 +59,7 @@ class AutoencoderModule(L.LightningModule):
 
     def on_validation_epoch_start(self):
         self._sums, self._count = defaultdict(float), 0
+        self._power = 0.0  # (2, C, K): summed target and error power per wavenumber shell
 
     on_test_epoch_start = on_validation_epoch_start
 
@@ -73,6 +75,7 @@ class AutoencoderModule(L.LightningModule):
             metrics |= self.loss(out, x)
         for k, v in metrics.items():
             self._sums[k] += v.item() * len(x)
+        self._power += torch.stack([radial_power(target), radial_power(pred - target)]).sum(1).cpu()
         self._count += len(x)
         if batch_idx == 0:
             self._sample = (target[0].cpu(), pred[0].cpu(), batch["run"][0], int(batch["t"][0]))
@@ -88,6 +91,9 @@ class AutoencoderModule(L.LightningModule):
                 fields = self.trainer.datamodule.fields
                 rows = [[f] + [means[f"{m}/{f}"] for m in METRICS] for f in fields]
                 self.logger.experiment.log({"test/table": wandb.Table(["field"] + METRICS, rows)})
+                power = (self._power / self._count).tolist()
+                self.logger.experiment.summary["spectrum"] = {
+                    f: {"target": power[0][c], "error": power[1][c]} for c, f in enumerate(fields)}
             plt.close("all")
 
     def on_validation_epoch_end(self):

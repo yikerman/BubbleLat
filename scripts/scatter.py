@@ -6,12 +6,11 @@ scripts/common.sh), averages seeds, and writes figures/scatter.png plus a table 
     uv run python scripts/scatter.py
 """
 
-from collections import defaultdict
-
 import matplotlib.pyplot as plt
 import numpy as np
-import wandb
 from scipy.stats import spearmanr
+
+from bubblelat.runs import latest_runs
 
 FIELDS = ["dfun", "temperature", "velx", "vely"]
 PROBES = ["vapor_frac", "interface_len", "bubble_count", "wall_temp"]
@@ -29,17 +28,8 @@ INK, MUTED, GRID, SURFACE = "#0b0b0b", "#898781", "#e1e0d9", "#fcfcfb"
 
 def load() -> list[dict]:
     """One row per (experiment, model): seed mean and std of both scores, latest job only."""
-    api = wandb.Api()
-    seeds = defaultdict(lambda: defaultdict(list))  # (group, name) -> job -> runs
-    for run in api.runs(f"{api.default_entity}/bubblelat"):
-        s = run.summary
-        # Runs trained before the cosine learning-rate decay are tagged "constant-lr" in wandb.
-        if (run.state == "finished" and "probe/vapor_frac" in s and "test/vrmse/dfun" in s
-                and "constant-lr" not in run.tags):
-            seeds[run.group, run.name][run.id.split("-")[1]].append(run)  # "<exp>-<job>-<run>"
     rows = []
-    for (group, name), jobs in seeds.items():
-        runs = jobs[max(jobs, key=int)]
+    for (group, name), runs in latest_runs("probe/vapor_frac", "test/vrmse/dfun").items():
         err = np.array([np.mean([r.summary[f"test/vrmse/{f}"] for f in FIELDS]) for r in runs])
         probe = np.array([np.mean([r.summary[f"probe/{p}"] for p in PROBES]) for r in runs])
         family = group if group in FAMILIES else name.split("-")[0]

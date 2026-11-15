@@ -12,6 +12,7 @@ single frames, then whether the latents mean anything. See `ROADMAP.md` for plan
 
 ## Layout
 - `bubblelat/data.py` · `models.py` · `losses.py` · `metrics.py` · `module.py` · `cli.py`
+- `bubblelat/runs.py`: selects wandb runs for `scripts/scatter.py` and `scripts/spectrum.py`.
 - `bubblelat/probe.py`: per-frame labels and the ridge readout probe; `bubblelat predict` dumps
   latents and logs `probe/*` to the model's wandb run.
 - `bubblelat/cache.py`: builds the training cache, one float32 `(T, C, H, W)` `.npy` + `.json` per run.

@@ -10,7 +10,7 @@ Learned compression of BubbleML single frames, and how meaningful the resulting 
 | `bubblelat/data.py` | reads the cache (memory-mapped), fixed split by wall temperature, standardizes each field |
 | `bubblelat/models.py` | `Autoencoder` interface (`encode`, `decode`), `Downsample` and `POD` baselines, `ConvAE`, `ConvVAE` |
 | `bubblelat/losses.py` | `MSE`, `BetaVAE` (a loss returns a dict whose `"loss"` entry is optimized) |
-| `bubblelat/metrics.py` | MAE, RMSE, VRMSE and error by wavenumber band per field, vapor IoU and fraction, in physical units |
+| `bubblelat/metrics.py` | MAE, RMSE, VRMSE, error by wavenumber band and the radial power spectrum per field, vapor IoU and fraction, in physical units |
 | `bubblelat/module.py` | Lightning module: training, val/test metrics, wandb tables and sample images, latent dump |
 | `bubblelat/probe.py` | per-frame labels (vapor fraction, interface length, bubble count) and the ridge readout probe |
 | `bubblelat/cli.py` | `bubblelat` command (LightningCLI), names wandb runs |

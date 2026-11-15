@@ -6,18 +6,32 @@ BANDS = ["low", "mid", "high"]
 METRICS = ["mae", "rmse", "vrmse"] + [f"spec_{b}" for b in BANDS]
 
 
-def band_masks(h: int, w: int, device=None) -> torch.Tensor:
-    """(3, h, w // 2 + 1) masks over rfft2 wavenumbers: three bands evenly spaced in log |k|.
+def radial_power(x: torch.Tensor) -> torch.Tensor:
+    """(B, C, H, W) -> (B, C, K): power in each wavenumber shell j <= |k| < j + 1.
 
-    |k| is in cycles per domain. The edges are Nyquist^(1/3) and Nyquist^(2/3) (4 and 16 at
-    128 px), as in The Well's binned spectral error. The mean (k = 0) is in no band.
+    |k| is in cycles per domain. Shell 0 is the mean, and the shells sum to the frame's mean
+    square (Parseval), so the others sum to its variance.
     """
-    ky = torch.fft.fftfreq(h, 1 / h, device=device)[:, None]
-    kx = torch.fft.rfftfreq(w, 1 / w, device=device)[None, :]
-    k = (ky**2 + kx**2).sqrt()
+    h, w = x.shape[2:]
+    ky = torch.fft.fftfreq(h, 1 / h, device=x.device)[:, None]
+    kx = torch.fft.rfftfreq(w, 1 / w, device=x.device)[None, :]
+    shell = (ky**2 + kx**2).sqrt().floor().long().flatten()
+    # One-sided spectrum: every column counts twice except kx = 0 and kx = Nyquist.
+    weight = torch.full((w // 2 + 1,), 2.0, device=x.device)
+    weight[0] = 1.0
+    if w % 2 == 0:
+        weight[-1] = 1.0
+    power = (torch.fft.rfft2(x, norm="forward").abs().pow(2) * weight).flatten(2)
+    return power.new_zeros(*power.shape[:2], int(shell.max()) + 1).index_add_(2, shell, power)
+
+
+def band_slices(h: int, w: int) -> list[slice]:
+    """Shell ranges of three bands evenly spaced in log |k|, without the mean. The edges are
+    Nyquist^(1/3) and Nyquist^(2/3) (4 and 16 at 128 px), as in The Well's binned spectral error.
+    """
     nyquist = min(h, w) / 2
-    lo, hi = nyquist ** (1 / 3), nyquist ** (2 / 3)
-    return torch.stack([(k > 0) & (k < lo), (k >= lo) & (k < hi), k >= hi])
+    lo, hi = round(nyquist ** (1 / 3)), round(nyquist ** (2 / 3))
+    return [slice(1, lo), slice(lo, hi), slice(hi, None)]
 
 
 def field_errors(pred: torch.Tensor, target: torch.Tensor, fields: list[str]) -> dict:
@@ -30,29 +44,17 @@ def field_errors(pred: torch.Tensor, target: torch.Tensor, fields: list[str]) ->
     err = pred - target
     mse = err.pow(2).mean(dim=(2, 3))  # (B, C)
     var = target.var(dim=(2, 3), unbiased=False)
-
-    # One-sided spectrum: double every column except kx = 0 and kx = Nyquist so that band
-    # powers sum to the frame's variance (Parseval).
-    h, w = target.shape[2:]
-    weight = torch.full((w // 2 + 1,), 2.0, device=target.device)
-    weight[0] = 1.0
-    if w % 2 == 0:
-        weight[-1] = 1.0
-    masks = band_masks(h, w, target.device) * weight  # (3, h, w/2+1)
-
-    def band_power(x):  # (B, C, 3)
-        power = torch.fft.rfft2(x, norm="forward").abs().pow(2)
-        return torch.einsum("bchw,nhw->bcn", power, masks)
-
-    spec = (band_power(err) / (band_power(target) + 1e-7)).sqrt()
+    err_power, target_power = radial_power(err), radial_power(target)  # (B, C, K)
+    spec = [(err_power[..., s].sum(-1) / (target_power[..., s].sum(-1) + 1e-7)).sqrt()
+            for s in band_slices(*target.shape[2:])]
 
     out = {}
     for c, name in enumerate(fields):
         out[f"mae/{name}"] = err[:, c].abs().mean()
         out[f"rmse/{name}"] = mse[:, c].sqrt().mean()
         out[f"vrmse/{name}"] = (mse[:, c] / (var[:, c] + 1e-7)).sqrt().mean()
-        for n, band in enumerate(BANDS):
-            out[f"spec_{band}/{name}"] = spec[:, c, n].mean()
+        for band, value in zip(BANDS, spec):
+            out[f"spec_{band}/{name}"] = value[:, c].mean()
     return out
 
 
