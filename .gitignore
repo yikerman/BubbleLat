@@ -16,3 +16,7 @@ logs/*
 !logs/.gitkeep
 data/
 figures/
+
+# LaTeX build files
+slides/*
+!slides/*.tex

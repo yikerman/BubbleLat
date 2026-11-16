@@ -1,0 +1,97 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\usepackage{booktabs}
+\graphicspath{{../figures/}}
+
+\title{BubbleLat}
+\subtitle{Learned compression of boiling frames, and whether the latents mean anything}
+\author{Yi Cao}
+\institute{EECS 221 check-in}
+\date{November 15, 2026}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Setup}
+  \begin{itemize}
+    \item \textbf{Data:} BubbleML 2.0 pool boiling, 94 runs in 5 fluid/regime directories
+      (FC-72, LN2, R515B), single frames at $128\times128$, 4 fields
+      (distance function, temperature, $u$, $v$).
+    \item \textbf{Split by run}, never by frame: per directory, held-out wall temperatures
+      inside the training range (interpolation).
+    \item \textbf{Temperature per run:} $\theta = (T - T_\mathrm{bulk})/(T_\mathrm{wall} - T_\mathrm{bulk})$.
+      With one global scale, fluids $\sim$250\,K apart swamped the structure inside a frame.
+    \item \textbf{Models:} Downsample (average pool), POD (PCA), ConvAE.
+      Compression $4\times$ to $256\times$.
+    \item \textbf{Reconstruction:} VRMSE in physical units (1 = frame mean), error per
+      wavenumber band, vapor-mask IoU.
+    \item \textbf{Readout:} ridge probe from the frozen latent, fitted on training runs,
+      scored on test runs: vapor fraction, interface length, bubble count, wall temperature.
+      Control: the same ConvAE, untrained.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Baselines: reconstruction}
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    VRMSE $\downarrow$ & $4\times$ & $16\times$ & $64\times$ & $256\times$ \\
+    \midrule
+    Downsample & 0.192 & 0.326 & 0.466 & 0.612 \\
+    POD        & --    & 0.140 & 0.243 & 0.391 \\
+    ConvAE     & \textbf{0.059} & \textbf{0.120} & \textbf{0.209} & \textbf{0.333} \\
+    \midrule
+    vapor IoU $\uparrow$ & & & & \\
+    Downsample & \textbf{0.82} & 0.66 & 0.41 & 0.11 \\
+    POD        & --   & 0.66 & 0.48 & 0.30 \\
+    ConvAE     & 0.77 & \textbf{0.70} & \textbf{0.63} & \textbf{0.49} \\
+    \bottomrule
+  \end{tabular}
+  \par\vspace{0.3em}{\footnotesize Test set, mean of 4 fields. ConvAE: 3 seeds, std $\le 0.002$.}
+  \vspace{0.6em}
+  \begin{itemize}
+    \item All models keep large scales and lose small ones first.
+    \item ConvAE: compression set by pooling depth ($4^\text{levels}$), 4 latent channels.
+      Pooling deeper and widening the latent instead gave a flat curve below $16\times$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{First result: reconstruction vs.\ readout}
+  \begin{columns}[c]
+    \begin{column}{0.6\textwidth}
+      \includegraphics[width=\linewidth]{scatter.png}
+    \end{column}
+    \begin{column}{0.4\textwidth}
+      \small
+      \begin{itemize}
+        \item Spearman $-0.84$ over 11 models, mostly between families.
+        \item ConvAE probe $R^2$ is flat (0.83) from $4\times$ to $64\times$ while its
+          error grows $3.5\times$.
+        \item Downsample is flat too, with no learning.
+        \item Untrained ConvAE already reaches 0.64.
+        \item \textbf{Reading:} these frame-level targets need only coarse structure,
+          which survives every ratio. Not yet a statement about latents in general.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Revised plan}
+  \begin{enumerate}
+    \item \textbf{Fine-scale probe targets:} per-location vapor-mask probe from the spatial
+      latent, so probe difficulty rises with compression.
+    \item \textbf{Nonlinear readout:} 1-hidden-layer MLP probe; the MLP--ridge gap measures
+      how linear the latent is.
+    \item \textbf{Controls:} untrained encoder at every latent size; shuffled labels.
+    \item \textbf{$\beta$-VAE} on the ConvAE backbone, larger $\beta$ ($\ge 1$).
+    \item \textbf{Second architecture:} small ViT autoencoder at the same latent sizes.
+    \item \textbf{Generalization:} cross-fluid probe transfer (fit on FC-72, test on LN2);
+      geometry metrics (intrinsic dimension, CKA).
+  \end{enumerate}
+\end{frame}
+
+\end{document}
