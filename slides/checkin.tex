@@ -94,4 +94,17 @@
   \end{enumerate}
 \end{frame}
 
+\appendix
+\begin{frame}{Backup: reconstruction error by scale}
+  \centering
+  \includegraphics[width=\linewidth]{spectrum.png}
+  \small
+  \begin{itemize}
+    \item Error rises with wavenumber for every model; 1.0 means the scale is lost.
+    \item Downsample keeps the largest scales best but drops everything past its grid
+      (above 1.0: nearest-neighbour upsampling adds blocky edges).
+    \item ConvAE wins from about 5 cycles per domain upward; POD is better at the largest scales.
+  \end{itemize}
+\end{frame}
+
 \end{document}

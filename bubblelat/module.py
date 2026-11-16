@@ -6,7 +6,7 @@ wandb layout:
   val/<metric>/<field>            every validation epoch, in physical units
   val/vapor/{iou,frac_err}        vapor mask (dfun > 0) agreement
   test/<metric>/<field>           once, plus a "test/table" with one row per field
-  spectrum (run summary)          test: per field, mean target and error power per wavenumber shell
+  spectrum.<field>.{target,error} test, run summary: mean power per wavenumber shell
   <stage>/samples                 target | reconstruction | error for one fixed frame
   probe/<target>                  `predict`: ridge readout scores of the latent (see probe.py)
 
@@ -92,8 +92,9 @@ class AutoencoderModule(L.LightningModule):
                 rows = [[f] + [means[f"{m}/{f}"] for m in METRICS] for f in fields]
                 self.logger.experiment.log({"test/table": wandb.Table(["field"] + METRICS, rows)})
                 power = (self._power / self._count).tolist()
-                self.logger.experiment.summary["spectrum"] = {
-                    f: {"target": power[0][c], "error": power[1][c]} for c, f in enumerate(fields)}
+                for c, f in enumerate(fields):  # wandb stores nested summaries as dotted keys anyway
+                    self.logger.experiment.summary[f"spectrum.{f}.target"] = power[0][c]
+                    self.logger.experiment.summary[f"spectrum.{f}.error"] = power[1][c]
             plt.close("all")
 
     def on_validation_epoch_end(self):

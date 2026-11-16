@@ -24,12 +24,12 @@ INK, MUTED, GRID, SURFACE = "#0b0b0b", "#898781", "#e1e0d9", "#fcfcfb"
 def main() -> None:
     fields = sys.argv[1:] or FIELDS
     curves = {}  # (compression, family) -> relative error per shell, mean of seeds and fields
-    for (group, name), runs in latest_runs("spectrum", "test/vrmse/dfun").items():
+    for (group, name), runs in latest_runs("spectrum.dfun.error", "test/vrmse/dfun").items():
         family = name.split("-")[0]
         if group == "conv_ae_random" or family not in FAMILIES:
             continue
-        spectra = [r.summary["spectrum"][f] for r in runs for f in fields]
-        ratio = [np.sqrt(np.array(s["error"]) / np.array(s["target"])) for s in spectra]
+        ratio = [np.sqrt(np.array(r.summary[f"spectrum.{f}.error"]) / np.array(r.summary[f"spectrum.{f}.target"]))
+                 for r in runs for f in fields]
         curves[round(runs[0].config["model/compression"]), family] = np.mean(ratio, axis=0)
 
     ratios = sorted({c for c, _ in curves})
