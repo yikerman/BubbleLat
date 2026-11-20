@@ -1,0 +1,16 @@
+# ViTAE backbone with a Gaussian latent and a beta-weighted KL term (see losses.BetaVAE for units).
+model:
+  model:
+    class_path: bubblelat.models.ViTVAE
+    init_args:
+      in_channels: 4
+      patch_size: 8
+      latent_channels: 4
+      dim: 192
+      depth: 4
+      heads: 3
+  loss:
+    class_path: bubblelat.losses.BetaVAE
+    init_args:
+      beta: 0.01
+  lr: 1.0e-3
