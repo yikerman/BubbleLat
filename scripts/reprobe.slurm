@@ -18,9 +18,11 @@
 source scripts/common.sh
 
 # reprobe ID MODEL_CONFIG [overrides...]: `probe` run ID ("<exp>-<job>-<run>") under its own
-# experiment's group and tags, not this job's.
+# experiment's group and tags, not this job's. To redo only some experiments, e.g. after a failure
+# part way: sbatch --export=ALL,ONLY="pod downsample" scripts/reprobe.slurm
 reprobe() {
     local group="${1%%-[0-9]*}"
+    [[ -z "${ONLY:-}" || " $ONLY " == *" $group "* ]] || return 0
     WANDB=(--trainer.logger.init_args.tags "[$group]" --trainer.logger.init_args.group "$group")
     probe "$@"
 }
