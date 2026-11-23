@@ -139,6 +139,8 @@ MLP_DECAYS = [1e-4, 1e-3, 1e-2, 1e-1]  # AdamW weight decay, chosen on the valid
 MLP_STEPS, MLP_EVAL_EVERY = 2000, 50
 
 
+@torch.inference_mode(False)  # it trains, also when called from Lightning's predict loop
+@torch.enable_grad()
 def mlp_probe(data: dict, hidden: int = 256) -> dict[str, float]:
     """The `ridge_probe` targets read by a 1-hidden-layer MLP ("probe_mlp/<name>"), one MLP per
     target. Where it beats ridge, the latent holds the quantity but not linearly.
