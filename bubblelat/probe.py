@@ -1,9 +1,13 @@
 """Readout probes: how linearly can a frozen latent predict physical quantities of its frame?
 
 `bubblelat predict` writes one `latents.npz` per model, holding for each split "<split>/z" and
-the per-frame labels of `frame_labels` plus run, t, fluid and wall_temp. `ridge_probe` fits
-ridge regression on the training runs, picks the penalty on the validation runs and scores on
-the test runs, so a probe is held out by run exactly like reconstruction (Alain & Bengio 2016).
+the per-frame labels of `frame_labels` plus run, t, fluid and wall_temp. Every probe fits ridge
+regression on the training runs, picks the penalty on the validation runs and scores on the
+test runs, so a probe is held out by run exactly like reconstruction (Alain & Bengio 2016).
+
+`ridge_probe` reads frame-level scalars, which every model keeps at every ratio. `mask_probe`
+reads the vapor mask on a fixed 32x32 grid, so a latent cell must hold more sub-cell geometry
+as compression grows.
 
     uv run python -m bubblelat.probe outputs/latents/<id>/latents.npz
 """
@@ -12,24 +16,38 @@ import sys
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from scipy import ndimage
 
 from .data import SPLITS
+from .metrics import mask_iou
 
 ALPHAS = torch.logspace(-12, 0, 25)  # ridge penalty, relative to the largest squared singular value
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MAP = 32  # side of the vapor map grid: fixed for every model, so it does not shrink with the latent
+
+
+def vapor_map(dfun: torch.Tensor) -> torch.Tensor:
+    """Vapor fraction of each cell of a MAP x MAP grid, from the signed distance field (B, H, W)."""
+    return F.adaptive_avg_pool2d((dfun > 0).float()[:, None], MAP)[:, 0]
 
 
 def frame_labels(dfun: torch.Tensor) -> dict[str, torch.Tensor]:
     """Per-frame labels from the physical signed distance field (B, H, W); vapor is dfun > 0.
 
     interface_len counts the pixel edges between vapor and liquid; bubble_count is the number of
-    4-connected vapor regions.
+    4-connected vapor regions; vapor_map is the `vapor_map` (B, MAP, MAP).
     """
     vapor = (dfun > 0).cpu()
     edges = (vapor[:, 1:] != vapor[:, :-1]).sum(dim=(1, 2)) + (vapor[:, :, 1:] != vapor[:, :, :-1]).sum(dim=(1, 2))
     count = torch.tensor([ndimage.label(v)[1] for v in vapor.numpy()])
     return {"vapor_frac": vapor.float().mean(dim=(1, 2)), "interface_len": edges.float(),
-            "bubble_count": count.float()}
+            "bubble_count": count.float(), "vapor_map": vapor_map(dfun).cpu()}
+
+
+def map_iou(pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
+    """Per-frame IoU of two vapor maps (B, MAP, MAP), each cell counted as vapor above one half."""
+    return mask_iou(pred > 0.5, true > 0.5)
 
 
 def targets(data: dict) -> tuple[dict[str, torch.Tensor], list[str]]:
@@ -59,26 +77,33 @@ def targets(data: dict) -> tuple[dict[str, torch.Tensor], list[str]]:
     return out, names
 
 
-def ridge_probe(data: dict) -> dict[str, float]:
-    """Test R^2 for each regression target ("probe/<name>") and test accuracy of the fluid
-    readout ("probe/fluid_acc"), with the penalty chosen per target on the validation runs.
+def ridge_path(data: dict, y: dict[str, torch.Tensor]):
+    """Ridge regression from the flattened latent to y[split] (N, K) on DEVICE, fitted on the training
+    split for every penalty in ALPHAS. Returns predict(alpha, split) -> (N, K).
 
     Features are only centered, and the penalty grid is relative to their scale, so the score
     does not depend on the overall scale of a latent.
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    z = {s: torch.from_numpy(data[f"{s}/z"]).flatten(1).double().to(device) for s in SPLITS}
-    y, names = targets(data)
-    y = {s: v.to(device) for s, v in y.items()}
+    z = {s: torch.from_numpy(data[f"{s}/z"]).flatten(1).double().to(DEVICE) for s in SPLITS}
     z_mean, y_mean = z["train"].mean(0), y["train"].mean(0)
 
     # One SVD of the training features gives the ridge solution for every penalty.
     u, s, vh = torch.linalg.svd(z["train"] - z_mean, full_matrices=False)
     uty = u.T @ (y["train"] - y_mean)
+    proj = {split: (z[split] - z_mean) @ vh.T for split in SPLITS}
 
-    def predict(alpha, split):  # (N, K)
-        w = vh.T @ ((s / (s**2 + alpha * s[0] ** 2))[:, None] * uty)
-        return (z[split] - z_mean) @ w + y_mean
+    def predict(alpha, split):
+        return proj[split] @ ((s / (s**2 + alpha * s[0] ** 2))[:, None] * uty) + y_mean
+
+    return predict
+
+
+def ridge_probe(data: dict) -> dict[str, float]:
+    """Test R^2 for each regression target ("probe/<name>") and test accuracy of the fluid
+    readout ("probe/fluid_acc"), with the penalty chosen per target on the validation runs."""
+    y, names = targets(data)
+    y = {s: v.to(DEVICE) for s, v in y.items()}
+    predict = ridge_path(data, y)
 
     def r2(pred, true):  # (K,)
         return 1 - (pred - true).pow(2).sum(0) / (true - true.mean(0)).pow(2).sum(0)
@@ -92,8 +117,29 @@ def ridge_probe(data: dict) -> dict[str, float]:
     return scores | {"probe/fluid_acc": hit.double().mean().item()}
 
 
+def mask_probe(data: dict) -> dict[str, float]:
+    """Test IoU of the vapor map read linearly off the latent ("probe/vapor_map_iou"), with one
+    penalty for all cells chosen by validation IoU. "probe/vapor_map_iou_decoder" is the same
+    score for the model's own reconstruction: the decoder bounds what is in z, the probe asks
+    how much of it is linear.
+    """
+    y = {s: torch.from_numpy(data[f"{s}/vapor_map"]).flatten(1).double().to(DEVICE) for s in SPLITS}
+    predict = ridge_path(data, y)
+
+    def iou(alpha, split):
+        return map_iou(predict(alpha, split).view(-1, MAP, MAP), y[split].view(-1, MAP, MAP)).mean()
+
+    best = torch.stack([iou(a, "val") for a in ALPHAS]).argmax()
+    return {"probe/vapor_map_iou": iou(ALPHAS[best], "test").item(),
+            "probe/vapor_map_iou_decoder": float(data["test/vapor_map_iou_decoder"].mean())}
+
+
+def probe(data: dict) -> dict[str, float]:
+    return ridge_probe(data) | mask_probe(data)
+
+
 if __name__ == "__main__":
     for path in sys.argv[1:]:
         print(path)
-        for name, score in ridge_probe(dict(np.load(path))).items():
-            print(f"  {name:24s} {score: .4f}")
+        for name, score in probe(dict(np.load(path))).items():
+            print(f"  {name:28s} {score: .4f}")

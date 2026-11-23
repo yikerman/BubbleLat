@@ -58,14 +58,18 @@ def field_errors(pred: torch.Tensor, target: torch.Tensor, fields: list[str]) ->
     return out
 
 
+def mask_iou(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    """Per-frame intersection over union of boolean masks (B, H, W); 1.0 when both are empty."""
+    inter, union = (p & t).sum(dim=(1, 2)), (p | t).sum(dim=(1, 2))
+    return torch.where(union > 0, inter / union.clamp(min=1), torch.ones_like(inter, dtype=torch.float))
+
+
 def vapor_errors(pred_dfun: torch.Tensor, target_dfun: torch.Tensor) -> dict:
     """Batch-mean vapor-mask errors from the signed distance field (B, H, W); vapor is dfun > 0.
 
-    "vapor/iou" is the intersection over union of the two masks (1.0 when neither frame has
-    vapor) and "vapor/frac_err" is the absolute error of the vapor area fraction.
+    "vapor/iou" is the `mask_iou` of the two masks and "vapor/frac_err" is the absolute error
+    of the vapor area fraction.
     """
     p, t = pred_dfun > 0, target_dfun > 0
-    inter, union = (p & t).sum(dim=(1, 2)), (p | t).sum(dim=(1, 2))
-    iou = torch.where(union > 0, inter / union.clamp(min=1), torch.ones_like(inter, dtype=torch.float))
     frac_err = (p.float().mean(dim=(1, 2)) - t.float().mean(dim=(1, 2))).abs()
-    return {"vapor/iou": iou.mean(), "vapor/frac_err": frac_err.mean()}
+    return {"vapor/iou": mask_iou(p, t).mean(), "vapor/frac_err": frac_err.mean()}

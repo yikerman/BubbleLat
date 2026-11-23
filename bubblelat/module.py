@@ -8,7 +8,7 @@ wandb layout:
   test/<metric>/<field>           once, plus a "test/table" with one row per field
   spectrum.<field>.{target,error} test, run summary: mean power per wavenumber shell
   <stage>/samples                 target | reconstruction | error for one fixed frame
-  probe/<target>                  `predict`: ridge readout scores of the latent (see probe.py)
+  probe/<target>                  `predict`: readout probe scores of the latent (see probe.py)
 
 `predict` also writes the latents and their labels to <trainer.default_root_dir>/latents.npz.
 """
@@ -30,7 +30,7 @@ from torch import nn
 from .data import SPLITS, denormalize
 from .metrics import METRICS, field_errors, radial_power, vapor_errors
 from .models import Autoencoder
-from .probe import frame_labels, ridge_probe
+from .probe import frame_labels, map_iou, probe, vapor_map
 
 
 class AutoencoderModule(L.LightningModule):
@@ -128,10 +128,14 @@ class AutoencoderModule(L.LightningModule):
 
     def predict_step(self, batch, _, dataloader_idx: int = 0):
         dm, x, split = self.trainer.datamodule, batch["x"], SPLITS[dataloader_idx]
-        dfun = denormalize(x.float(), batch)[:, dm.fields.index("dfun")]
-        rows = {"z": self.model.encode(x).float().cpu(), "t": batch["t"].cpu(),
-                "wall_temp": batch["wall_temp"].cpu(), "run": batch["run"], "fluid": batch["fluid"],
-                **frame_labels(dfun)}
+        i = dm.fields.index("dfun")
+        z = self.model.encode(x)
+        dfun = denormalize(x.float(), batch)[:, i]
+        recon = denormalize(self.model.decode(z).float(), batch)[:, i]
+        labels = frame_labels(dfun)
+        rows = {"z": z.float().cpu(), "t": batch["t"].cpu(), "wall_temp": batch["wall_temp"].cpu(),
+                "run": batch["run"], "fluid": batch["fluid"], **labels,
+                "vapor_map_iou_decoder": map_iou(vapor_map(recon).cpu(), labels["vapor_map"])}
         for k, v in rows.items():
             self._dump[f"{split}/{k}"].append(np.asarray(v))
 
@@ -140,7 +144,7 @@ class AutoencoderModule(L.LightningModule):
         path = Path(self.trainer.default_root_dir) / "latents.npz"
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(path, **data)
-        scores = ridge_probe(data)
+        scores = probe(data)
         print(f"latents: {path}\n" + "\n".join(f"{k:24s} {v: .4f}" for k, v in scores.items()))
         if self.logger:
             self.logger.log_metrics(scores)
