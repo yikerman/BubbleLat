@@ -13,8 +13,8 @@ single frames, then whether the latents mean anything. See `ROADMAP.md` for plan
 ## Layout
 - `bubblelat/data.py` · `models.py` · `losses.py` · `metrics.py` · `module.py` · `cli.py`
 - `bubblelat/runs.py`: selects wandb runs for `scripts/scatter.py` and `scripts/spectrum.py`.
-- `bubblelat/probe.py`: per-frame labels and the ridge readout probe; `bubblelat predict` dumps
-  latents and logs `probe/*` to the model's wandb run.
+- `bubblelat/probe.py`: per-frame labels and the readout probes (ridge, vapor map, MLP);
+  `bubblelat predict` dumps latents and logs `probe/*` and `probe_mlp/*` to the model's wandb run.
 - `bubblelat/cache.py`: builds the training cache, one float32 `(T, C, H, W)` `.npy` + `.json` per run.
   Everything trains and evaluates at 128x128 (512 average-pooled by 4), in full precision.
 - `configs/base.yaml` (local, sample data), `configs/hpc3.yaml` (cluster data), `configs/model/*.yaml`
@@ -47,4 +47,6 @@ sbatch scripts/<exp>.slurm        # on HPC3, from the repo root
   WebDataset `BubbleML_2_poolboiling_wds`, which has since been removed from the share, so it cannot
   be rebuilt that way: don't delete or overwrite it. The raw HDF5 runs are still under
   `/share/crsp/lab/amowli/share/BubbleML_2`.
+- Latents: every `predict` on HPC3 keeps `/pub/caoy44/bubblelat_latents/<run id>/latents.npz`, so a
+  new probe runs on those files without a GPU. `scripts/reprobe.slurm` refills it from checkpoints.
 - Deadlines: check-in Nov 15, presentation Dec 8, report Dec 11 (6 pages + reproducible README).

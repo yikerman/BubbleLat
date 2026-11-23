@@ -1,13 +1,14 @@
-"""Readout probes: how linearly can a frozen latent predict physical quantities of its frame?
+"""Readout probes: how well, and how linearly, does a frozen latent predict its frame's physics?
 
 `bubblelat predict` writes one `latents.npz` per model, holding for each split "<split>/z" and
-the per-frame labels of `frame_labels` plus run, t, fluid and wall_temp. Every probe fits ridge
-regression on the training runs, picks the penalty on the validation runs and scores on the
-test runs, so a probe is held out by run exactly like reconstruction (Alain & Bengio 2016).
+the per-frame labels of `frame_labels` plus run, t, fluid and wall_temp. Every probe fits on
+the training runs, picks its hyperparameters on the validation runs and scores on the test runs,
+so a probe is held out by run exactly like reconstruction (Alain & Bengio 2016).
 
 `ridge_probe` reads frame-level scalars, which every model keeps at every ratio. `mask_probe`
 reads the vapor mask on a fixed 32x32 grid, so a latent cell must hold more sub-cell geometry
-as compression grows.
+as compression grows. `mlp_probe` reads the same scalars as `ridge_probe` nonlinearly: the gap
+between the two separates "not in the latent" from "in the latent, but not linearly".
 
     uv run python -m bubblelat.probe outputs/latents/<id>/latents.npz
 """
@@ -134,8 +135,67 @@ def mask_probe(data: dict) -> dict[str, float]:
             "probe/vapor_map_iou_decoder": float(data["test/vapor_map_iou_decoder"].mean())}
 
 
+MLP_DECAYS = [1e-4, 1e-3, 1e-2, 1e-1]  # AdamW weight decay, chosen on the validation runs
+MLP_STEPS, MLP_EVAL_EVERY = 2000, 50
+
+
+def mlp_probe(data: dict, hidden: int = 256) -> dict[str, float]:
+    """The `ridge_probe` targets read by a 1-hidden-layer MLP ("probe_mlp/<name>"), one MLP per
+    target. Where it beats ridge, the latent holds the quantity but not linearly.
+
+    Inputs are standardized with training statistics, so like ridge the score does not depend on
+    the scale of a latent. Full-batch AdamW; the weight decay and the stopping step are chosen
+    together on the validation runs (early stopping), then scored once on the test runs.
+    """
+    z = {s: torch.from_numpy(data[f"{s}/z"]).flatten(1).float().to(DEVICE) for s in SPLITS}
+    mean, std = z["train"].mean(0), z["train"].std(0) + 1e-6
+    z = {s: (v - mean) / std for s, v in z.items()}
+    y, names = targets(data)
+    y = {s: v.float().to(DEVICE) for s, v in y.items()}
+    k = len(names)
+
+    def r2(pred, true):
+        return 1 - (pred - true).pow(2).sum() / (true - true.mean()).pow(2).sum()
+
+    def acc(logits, onehot):
+        return (logits.argmax(1) == onehot.argmax(1)).float().mean()
+
+    # (output columns, loss, score) per readout: each regression target, then the fluid.
+    readouts = [(slice(j, j + 1), F.mse_loss, r2) for j in range(k)]
+    readouts.append((slice(k, None), lambda p, t: F.cross_entropy(p, t.argmax(1)), acc))
+
+    scores = []
+    for cols, loss_fn, score_fn in readouts:
+        target = {s: v[:, cols] for s, v in y.items()}
+        t_mean, t_std = target["train"].mean(0), target["train"].std(0)
+        if loss_fn is F.mse_loss:  # regress standardized targets; R^2 is invariant to it
+            target = {s: (v - t_mean) / t_std for s, v in target.items()}
+        best_val, best_test = -float("inf"), float("nan")
+        for decay in MLP_DECAYS:
+            torch.manual_seed(0)
+            net = torch.nn.Sequential(torch.nn.Linear(z["train"].shape[1], hidden), torch.nn.GELU(),
+                                      torch.nn.Linear(hidden, target["train"].shape[1])).to(DEVICE)
+            # Zero output layer: step 0 is the constant prediction (R^2 about 0), so early
+            # stopping falls back to it when every trained checkpoint overfits.
+            torch.nn.init.zeros_(net[-1].weight)
+            torch.nn.init.zeros_(net[-1].bias)
+            opt = torch.optim.AdamW(net.parameters(), lr=1e-3, weight_decay=decay)
+            for step in range(MLP_STEPS + 1):
+                if step % MLP_EVAL_EVERY == 0:
+                    with torch.no_grad():
+                        val = score_fn(net(z["val"]), target["val"]).item()
+                        if val > best_val:
+                            best_val = val
+                            best_test = score_fn(net(z["test"]), target["test"]).item()
+                opt.zero_grad()
+                loss_fn(net(z["train"]), target["train"]).backward()
+                opt.step()
+        scores.append(best_test)
+    return dict(zip([f"probe_mlp/{n}" for n in names] + ["probe_mlp/fluid_acc"], scores))
+
+
 def probe(data: dict) -> dict[str, float]:
-    return ridge_probe(data) | mask_probe(data)
+    return ridge_probe(data) | mask_probe(data) | mlp_probe(data)
 
 
 if __name__ == "__main__":

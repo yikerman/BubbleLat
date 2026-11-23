@@ -36,14 +36,18 @@ stage_cache() {
     STAGED=1
 }
 
-# probe ID MODEL_CONFIG [overrides...]: dump the latents of run ID to node-local scratch and log
-# the readout probe scores to the same wandb run as its reconstruction metrics.
+# Latents persist after the job (one .npz of about 200 MB per model), so a new probe needs no GPU.
+LATENTS="${SLURM_JOB_ID:+/pub/caoy44/bubblelat_latents}"
+LATENTS="${LATENTS:-outputs/latents}"
+
+# probe ID MODEL_CONFIG [overrides...]: dump the latents of run ID to $LATENTS/ID/latents.npz and
+# log the readout probe scores to the same wandb run as its reconstruction metrics.
 probe() {
     local id="$1" model="$2"; shift 2
     stage_cache
     bubblelat predict "${CONFIGS[@]}" --config "$model" "${WANDB[@]}" \
         --trainer.logger.init_args.id "$id" --trainer.logger.init_args.resume allow \
-        --trainer.default_root_dir "${TMPDIR:-outputs}/latents/$id" "$@"
+        --trainer.default_root_dir "$LATENTS/$id" "$@"
 }
 
 # evaluate MODEL_CONFIG [overrides...]: test and probe a model without training (one wandb run).
