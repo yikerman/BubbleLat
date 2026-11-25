@@ -2,7 +2,7 @@
 # Rerun `predict` on finished 64x runs, for the probes added after they ran (vapor map, MLP), and
 # keep their latents in $LATENTS. Scores go to each run's own wandb run, under its own group and
 # tags; nothing is retrained. Trained runs load last.ckpt; POD, Downsample and the random
-# ConvAE are rebuilt from their config and seed, as `evaluate` built them.
+# encoders are rebuilt from their config and seed, as `evaluate` built them.
 #SBATCH --job-name=reprobe
 # Free partition: inference only, and a preempted (cancelled) job is safe to resubmit, since every
 # step rewrites the same latents and resumes the same wandb run.
@@ -37,6 +37,7 @@ for s in 0 1 2; do
     reprobe "$id" configs/model/vit_vae.yaml --seed_everything "$s" --ckpt_path "$(ckpt "$id")" \
         --model.loss.init_args.beta 0.01
     reprobe "conv_ae_random-59541970-e$((s + 1))" configs/model/conv_ae.yaml --seed_everything "$s"
+    reprobe "vit_ae_random-59949004-e$((s + 1))" configs/model/vit_ae.yaml --seed_everything "$s"
 done
 id="vit_vae-59858581-b0.1-s0"
 reprobe "$id" configs/model/vit_vae.yaml --seed_everything 0 --ckpt_path "$(ckpt "$id")" \
