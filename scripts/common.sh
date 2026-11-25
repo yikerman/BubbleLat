@@ -9,7 +9,6 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 EXP="${SLURM_JOB_NAME:-local}"
 JOB="${SLURM_JOB_ID:-local}"
 echo "exp=$EXP job=$JOB host=$(hostname) commit=$(git rev-parse --short HEAD)"
-nvidia-smi -L 2>/dev/null || echo "no GPU"
 
 CONFIGS=(--config configs/base.yaml --config configs/hpc3.yaml)
 WANDB=(--trainer.logger.init_args.tags "[$EXP]" --trainer.logger.init_args.group "$EXP"
@@ -23,6 +22,10 @@ if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
 fi
 uv sync --frozen
+
+# GPU jobs (Slurm sets CUDA_VISIBLE_DEVICES) stop here if torch cannot use the GPU, not run on CPU.
+[[ -z "${CUDA_VISIBLE_DEVICES:-}" ]] ||
+    uv run --frozen --no-sync python -c "import torch; print(torch.cuda.get_device_name())"
 
 bubblelat() { uv run --frozen --no-sync bubblelat "$@"; }
 
