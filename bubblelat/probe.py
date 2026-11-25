@@ -145,13 +145,13 @@ def mlp_probe(data: dict, hidden: int = 256) -> dict[str, float]:
     """The `ridge_probe` targets read by a 1-hidden-layer MLP ("probe_mlp/<name>"), one MLP per
     target. Where it beats ridge, the latent holds the quantity but not linearly.
 
-    Inputs are standardized with training statistics, so like ridge the score does not depend on
-    the scale of a latent. Full-batch AdamW; the weight decay and the stopping step are chosen
+    Inputs are centered and divided by one RMS, so like ridge the score ignores a latent's scale
+    but not its geometry. Full-batch AdamW; the weight decay and the stopping step are chosen
     together on the validation runs (early stopping), then scored once on the test runs.
     """
     z = {s: torch.from_numpy(data[f"{s}/z"]).flatten(1).float().to(DEVICE) for s in SPLITS}
-    mean, std = z["train"].mean(0), z["train"].std(0) + 1e-6
-    z = {s: (v - mean) / std for s, v in z.items()}
+    mean, scale = z["train"].mean(0), z["train"].var(0).mean().sqrt()
+    z = {s: (v - mean) / scale for s, v in z.items()}
     y, names = targets(data)
     y = {s: v.float().to(DEVICE) for s, v in y.items()}
     k = len(names)
